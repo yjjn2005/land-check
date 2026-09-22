@@ -24,11 +24,31 @@ async function molit(op, params){
 const ALLOWED_NED = new Set(["getLandUseAttr","getIndvdLandPriceAttr","ladfrlList","getLandCharacteristics","getPossessionAttr","ladfrlList"]);
 
 export default {
-  async fetch(req){
-    const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
+  async fetch(req, env){
+    const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,PUT,OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
     if(req.method==="OPTIONS") return new Response(null,{headers:cors});
     const url=new URL(req.url); const p=url.pathname; const q=url.searchParams;
     const json=(o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
+
+    // ---- PIN 기반 기기 간 동기화 (즐겨찾기·다중 필지 목록) ----
+    const syncMatch = p.match(/^\/sync\/([A-Za-z0-9_-]{4,64})$/);
+    if(syncMatch){
+      const key = "pin:" + syncMatch[1];
+      if(req.method === "GET"){
+        const v = await env.LAND_CHECK_SYNC.get(key);
+        if(!v) return new Response("no data", { status: 404, headers: cors });
+        return new Response(v, { headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      if(req.method === "PUT"){
+        const body = await req.text();
+        if(body.length > 100_000) return new Response("too large", { status: 413, headers: cors });
+        try{ JSON.parse(body); } catch { return new Response("bad json", { status: 400, headers: cors }); }
+        await env.LAND_CHECK_SYNC.put(key, body, { expirationTtl: 60 * 60 * 24 * 365 });
+        return new Response('{"ok":true}', { headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      return new Response("method not allowed", { status: 405, headers: cors });
+    }
+
     try{
       if(p==="/molit/search-act") return json(await molit("DTsearchLunCd",{landUseNm:q.get("landUseNm")||"",pageNum:q.get("pageNum")||"1",numOfRows:q.get("numOfRows")||"30"}));
       if(p==="/molit/restriction") return json(await molit("DTarLandUseInfo",{areaCd:q.get("areaCd")||"",ucodeList:q.get("ucodeList")||"",landUseNm:q.get("landUseNm")||""}));
