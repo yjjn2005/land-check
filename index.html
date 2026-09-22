@@ -68,6 +68,15 @@
   <div id="status" class="status hidden"></div>
   <div id="out"></div>
 
+  <details class="card" style="margin-top:20px">
+    <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:15px">다중 필지 일괄 조회 (동일 소유자 보유 필지 매매 안내용)</summary>
+    <p class="small" style="margin-top:10px">한 줄에 한 필지씩(지번주소 또는 PNU) 입력하면, 필지별 상세와 전체 합산 결과를 함께 보여주고 전체 필지를 묶은 매매 브로셔를 만들 수 있습니다.</p>
+    <textarea id="multiQ" rows="5" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit" placeholder="경기도 남양주시 화도읍 월산리 20-5&#10;경기도 남양주시 화도읍 월산리 537&#10;...">경기도 남양주시 화도읍 월산리 20-5
+경기도 남양주시 화도읍 월산리 537</textarea>
+    <button id="multiGo" style="margin-top:10px;padding:10px 18px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">일괄 조회</button>
+    <div id="multiOut" style="margin-top:14px"></div>
+  </details>
+
   <footer>
     ※ 토지이용계획·공시지가·토지대장·토지특성은 브이월드(국토교통부 국가공간정보) 오픈API, 행위제한은 국토교통부 토지이용규제정보서비스 기준. 건폐율·용적률 상한과 용도별 건축물은 「국토의 계획 및 이용에 관한 법률 시행령」 §71·§84·§85 요약.<br>
     ※ 실제 적용 건폐율·용적률·허용 건축물은 관할 지자체 도시계획조례로 확정되므로 최종 확인은 지자체 도시계획과·건축과에 문의. 공식 「토지이용계획확인원」은 정부24에서 발급.
@@ -151,32 +160,161 @@ async function molitRestriction(areaCd,ucode,name){ return tryFetch(PROXY+"/moli
 // ---------- 메인 ----------
 $('#go').addEventListener('click',run);
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter')run();});
+document.getElementById('multiGo').addEventListener('click',runMulti);
+
+async function loadParcelData(q){
+  let pnu, addrLabel=q, point=null;
+  if(/^\d{19}$/.test(q)){ pnu=q; }
+  else{
+    const items=await searchParcel(q); if(!items.length) throw new Error('해당 주소의 필지를 찾을 수 없습니다.');
+    pnu=items[0].id; point=items[0].point; addrLabel=items[0].address?.parcel||q;
+  }
+  const [ladR,useR,priceR,charR]=await Promise.allSettled([
+    ned("ladfrlList",{pnu}), ned("getLandUseAttr",{pnu}), ned("getIndvdLandPriceAttr",{pnu}), ned("getLandCharacteristics",{pnu})
+  ]);
+  const lad=(ladR.status==='fulfilled'?firstArray(ladR.value):null)||[];
+  const uses=(useR.status==='fulfilled'?firstArray(useR.value):null)||[];
+  const prices=((priceR.status==='fulfilled'?firstArray(priceR.value):null)||[]).slice().sort((a,b)=>String(b.stdrYear).localeCompare(String(a.stdrYear)));
+  const chars=(charR.status==='fulfilled'?firstArray(charR.value):null)||[];
+  const errs=[ladR,useR,priceR,charR].filter(r=>r.status==='rejected').map(r=>r.reason.message);
+  return {q,addrLabel,pnu,point,lad:lad[0]||null,uses,prices,char:chars.slice().sort((a,b)=>String(b.stdrYear||'').localeCompare(String(a.stdrYear||'')))[0]||null,errs,raw:{lad:ladR,uses:useR,prices:priceR,chars:charR}};
+}
 
 async function run(){
   const q=$('#q').value.trim(); if(!q) return;
   $('#go').disabled=true; out.innerHTML='';
   try{
-    let pnu, addrLabel=q, point=null;
-    if(/^\d{19}$/.test(q)){ pnu=q; }
-    else{
-      setStatus('loading','① 필지 검색 중...');
-      const items=await searchParcel(q); if(!items.length) throw new Error('해당 주소의 필지를 찾을 수 없습니다.');
-      pnu=items[0].id; point=items[0].point; addrLabel=items[0].address?.parcel||q;
-    }
-    setStatus('loading','② 토지대장·토지이용계획·공시지가·토지특성 조회 중...');
-    const [ladR,useR,priceR,charR]=await Promise.allSettled([
-      ned("ladfrlList",{pnu}), ned("getLandUseAttr",{pnu}), ned("getIndvdLandPriceAttr",{pnu}), ned("getLandCharacteristics",{pnu})
-    ]);
-    const lad=(ladR.status==='fulfilled'?firstArray(ladR.value):null)||[];
-    const uses=(useR.status==='fulfilled'?firstArray(useR.value):null)||[];
-    const prices=((priceR.status==='fulfilled'?firstArray(priceR.value):null)||[]).slice().sort((a,b)=>String(b.stdrYear).localeCompare(String(a.stdrYear)));
-    const chars=(charR.status==='fulfilled'?firstArray(charR.value):null)||[];
-    const errs=[ladR,useR,priceR,charR].filter(r=>r.status==='rejected').map(r=>r.reason.message);
+    setStatus('loading','① 필지 검색 · ② 토지대장·토지이용계획·공시지가·토지특성 조회 중...');
+    const d = await loadParcelData(q);
     clearStatus();
-    render({q,addrLabel,pnu,point,lad:lad[0]||null,uses,prices,char:chars.slice().sort((a,b)=>String(b.stdrYear||'').localeCompare(String(a.stdrYear||'')))[0]||null,errs,raw:{lad:ladR,uses:useR,prices:priceR,chars:charR}});
+    render(d);
   }catch(e){ setStatus('error','조회 실패: '+e.message); console.error(e); }
   finally{ $('#go').disabled=false; }
 }
+
+// ---------- 다중 필지(동일 소유자) 일괄 조회 ----------
+let multiParcels=[]; // [{query, d, zoneNames, area}|{query, error}]
+
+function summarizeParcel(d){
+  const uqa=d.uses.filter(u=>String(u.prposAreaDstrcCode||'').startsWith('UQA'));
+  const zoneNames=[...new Set(uqa.map(u=>u.prposAreaDstrcCodeNm).filter(n=>ZONE_RULES[n]))];
+  const area=Number(d.lad?.lndpclAr||d.char?.lndpclAr||0);
+  const latestPrice=d.prices[0]||null;
+  const addr=d.lad?.ldCodeNm? d.lad.ldCodeNm+' '+(d.lad.mnnmSlno||'') : d.addrLabel;
+  return {addr,area,zoneNames,latestPrice};
+}
+
+async function runMulti(){
+  const raw=document.getElementById('multiQ').value;
+  const queries=raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!queries.length) return;
+  const btn=document.getElementById('multiGo'), out2=document.getElementById('multiOut');
+  btn.disabled=true; out2.innerHTML='<p class="small">'+queries.length+'개 필지 순차 조회 중...</p>';
+  multiParcels=[];
+  for(const q of queries){
+    try{ const d=await loadParcelData(q); multiParcels.push({query:q, d, ...summarizeParcel(d)}); }
+    catch(e){ multiParcels.push({query:q, error:e.message}); }
+  }
+  renderMulti();
+  btn.disabled=false;
+}
+
+function renderMulti(){
+  const out2=document.getElementById('multiOut');
+  const ok=multiParcels.filter(p=>!p.error);
+  const totalArea=ok.reduce((a,p)=>a+(p.area||0),0);
+  const totalPrice=ok.reduce((a,p)=>a+((p.latestPrice&&p.area)?Number(p.latestPrice.pblntfPclnd)*p.area:0),0);
+
+  let h=`<div class="grid2">
+    <div class="kpi"><div class="l">조회 필지</div><div class="v">${ok.length} / ${multiParcels.length}건</div></div>
+    <div class="kpi"><div class="l">총 면적</div><div class="v">${num(totalArea,1)}㎡ (${num(totalArea/3.3058,1)}평)</div></div>
+    <div class="kpi"><div class="l">총 공시지가 합계</div><div class="v">${won(Math.round(totalPrice))}</div></div>
+    <div class="kpi"><div class="l">평균 ㎡당(공시)</div><div class="v">${totalArea?won(Math.round(totalPrice/totalArea)):'-'}</div></div>
+  </div>`;
+
+  h+=`<table style="margin-top:12px"><tr><th>#</th><th>소재지</th><th>용도지역</th><th class="num">면적(㎡/평)</th><th class="num">공시지가 합계</th><th>상세</th></tr>`;
+  multiParcels.forEach((p,i)=>{
+    if(p.error){ h+=`<tr><td>${i+1}</td><td colspan="4" class="small">${esc(p.query)} — 조회 실패: ${esc(p.error)}</td><td></td></tr>`; return; }
+    const pr=(p.latestPrice&&p.area)?Number(p.latestPrice.pblntfPclnd)*p.area:null;
+    h+=`<tr><td>${i+1}</td><td>${esc(p.addr)}</td><td>${p.zoneNames.map(z=>`<span class="badge">${esc(z)}</span>`).join('')||'-'}</td>
+      <td class="num">${p.area?num(p.area,1)+' / '+num(p.area/3.3058,1):'-'}</td><td class="num">${pr?won(Math.round(pr)):'-'}</td>
+      <td><button onclick="render(multiParcels[${i}].d)" style="padding:4px 10px;font-size:12px;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer">보기</button></td></tr>`;
+  });
+  h+=`</table>
+    <button id="multiBrochureBtn" style="margin-top:14px;padding:12px 20px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:15px;cursor:pointer">전체 총괄 브로셔 보기 / 인쇄</button>`;
+  out2.innerHTML=h;
+  document.getElementById('multiBrochureBtn').addEventListener('click',()=>openMultiBrochure(multiParcels));
+}
+
+function openMultiBrochure(list){
+  const ok=list.filter(p=>!p.error);
+  const totalArea=ok.reduce((a,p)=>a+(p.area||0),0);
+  const totalPrice=ok.reduce((a,p)=>a+((p.latestPrice&&p.area)?Number(p.latestPrice.pblntfPclnd)*p.area:0),0);
+  const w=window.open('','_blank'); if(!w){ alert('팝업이 차단되었습니다.'); return; }
+
+  const rows = ok.map((p,i)=>{
+    const r = p.zoneNames[0]?ZONE_RULES[p.zoneNames[0]]:null;
+    const pr=(p.latestPrice&&p.area)?Number(p.latestPrice.pblntfPclnd)*p.area:null;
+    const b = p.zoneNames[0]?ZONE_BUILDINGS[p.zoneNames[0]]:null;
+    return `<div class="parcel">
+      <h3>${i+1}. ${esc2(p.addr)}</h3>
+      <table>
+        <tr><td>용도지역</td><td>${p.zoneNames.map(z=>`<span class="badge">${esc2(z)}</span>`).join('')||'-'}</td></tr>
+        <tr><td>면적</td><td>${p.area?num2(p.area,1)+' ㎡ / '+num2(p.area/3.3058,1)+' 평':'-'}</td></tr>
+        <tr><td>공시지가</td><td>${p.latestPrice?Number(p.latestPrice.pblntfPclnd).toLocaleString('ko-KR')+'원/㎡ · 합계 '+(pr?Math.round(pr).toLocaleString('ko-KR')+'원':'-'):'-'}</td></tr>
+        <tr><td>건폐율/용적률</td><td>${r?r.bc+'% / '+r.far+'%':'-'}</td></tr>
+        ${b?`<tr><td>건축 가능 용도(대표)</td><td>${b.allow.slice(0,5).map(x=>esc2(x)).join(', ')}</td></tr>`:''}
+      </table>
+    </div>`;
+  }).join('<hr style="border:none;border-top:1px solid #E0DCD3;margin:18px 0">');
+
+  const html=`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>토지 매매 소개 — 전체 필지</title>
+  <style>
+    @page{ size:A4; margin:16mm; }
+    body{font-family:'맑은 고딕','Malgun Gothic',sans-serif;color:#1a1a1a;margin:0;background:#fff}
+    .sheet{max-width:800px;margin:0 auto;padding:24px}
+    .hero{background:linear-gradient(135deg,#0F2544,#1a3a63);color:#fff;padding:28px 26px;border-radius:10px;margin-bottom:20px}
+    .hero .tag{display:inline-block;background:#C6A15B;color:#fff;font-size:12px;padding:4px 12px;border-radius:12px;margin-bottom:10px}
+    .hero h1{margin:0 0 6px;font-size:24px}
+    .price{font-size:28px;font-weight:800;color:#C6A15B;margin-top:14px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
+    .kpi{background:#FAF9F6;border:1px solid #E0DCD3;border-radius:8px;padding:12px 14px}
+    .kpi .l{font-size:12px;color:#777}.kpi .v{font-size:17px;font-weight:700;color:#0F2544}
+    h2{font-size:16px;color:#0F2544;border-bottom:2px solid #C6A15B;padding-bottom:6px;margin:22px 0 10px}
+    .parcel h3{font-size:15px;color:#0F2544;margin:0 0 8px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    td{padding:6px;border-bottom:1px solid #F0EDE6}
+    td:first-child{width:140px;color:#666;background:#FAF9F6;font-weight:600}
+    .badge{display:inline-block;background:#C6A15B;color:#fff;padding:3px 10px;border-radius:10px;font-size:12px;margin:2px}
+    .foot{margin-top:24px;font-size:11px;color:#999;border-top:1px solid #E0DCD3;padding-top:10px;line-height:1.6}
+    .toolbar{max-width:800px;margin:10px auto;text-align:right}
+    .toolbar button{padding:10px 18px;background:#0F2544;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer}
+    @media print{ .toolbar{display:none} }
+  </style></head><body>
+  <div class="toolbar"><button onclick="window.print()">인쇄 / PDF로 저장</button></div>
+  <div class="sheet">
+    <div class="hero">
+      <span class="tag">매매 안내 · 전체 ${ok.length}필지</span>
+      <h1>보유 토지 일괄 매매 안내</h1>
+      <div class="price">총 ${totalPrice?Math.round(totalPrice).toLocaleString('ko-KR')+'원':'-'} <span style="font-size:13px;font-weight:400;opacity:.85">(개별공시지가 합계 기준)</span></div>
+    </div>
+    <div class="grid">
+      <div class="kpi"><div class="l">총 필지 수</div><div class="v">${ok.length}필지</div></div>
+      <div class="kpi"><div class="l">총 면적</div><div class="v">${num2(totalArea,1)} ㎡ / ${num2(totalArea/3.3058,1)} 평</div></div>
+    </div>
+    <h2>필지별 상세</h2>
+    ${rows}
+    <div class="foot">
+      ※ 본 브로셔는 브이월드(국토교통부 국가공간정보) 오픈API 기준으로 자동 생성된 참고 자료이며, 법적 효력이 있는 자료가 아닙니다.<br>
+      ※ 정확한 거래 조건은 공식 「토지이용계획확인원」(정부24) 및 등기사항증명서, 현장 확인을 통해 최종 확인하시기 바랍니다.<br>
+      생성일: ${new Date().toLocaleDateString('ko-KR')}
+    </div>
+  </div>
+  </body></html>`;
+  w.document.write(html);
+  w.document.close();
+}
+function num2(n,d=2){ const v=Number(n); return isNaN(v)?'-':v.toLocaleString('ko-KR',{maximumFractionDigits:d}); }
 
 
 // ---------- 매스 다이어그램 (건폐율·용적률 기반 개략 볼륨도) ----------
@@ -251,7 +389,7 @@ function openBrochure(ctx){
 
     <div class="grid">
       <div class="kpi"><div class="l">필지 면적</div><div class="v">${area?area.toFixed(1)+' ㎡ / '+(area/3.3058).toFixed(1)+' 평':'-'}</div></div>
-      <div class="kpi"><div class="l">공시지가(㎡당)</div><div class="v">${ppm?ppm.toLocaleString('ko-KR')+'원':'-'}</div></div>
+      <div class="kpi"><div class="l">공시지가(㎡당 / 평당)</div><div class="v">${ppm?ppm.toLocaleString('ko-KR')+'원 / '+Math.round(ppm*3.3058).toLocaleString('ko-KR')+'원':'-'}</div></div>
       <div class="kpi"><div class="l">용도지역</div><div class="v">${esc2(zone)}</div></div>
       <div class="kpi"><div class="l">건폐율 / 용적률</div><div class="v">${r?r.bc+'% / '+r.far+'%':'-'}</div></div>
       <div class="kpi"><div class="l">도로 접면</div><div class="v">${esc2(roadInfo)}</div></div>
@@ -475,24 +613,26 @@ async function runComparableTrades({areaCd,addr,area,zoneNames,latestPrice}){
     const officialTotal = (latestPrice&&area)? Number(latestPrice.pblntfPclnd)*area : null;
     const ratio = (officialTotal && estTotal)? (estTotal/officialTotal) : null;
 
+    const medPpy = medPpm*3.3058, avgPpy = avgPpm*3.3058; // 평당 환산
+
     let h = `<div class="grid2">
       <div class="kpi"><div class="l">표본(${esc(poolLabel)}, 최근 6개월)</div><div class="v">${pool.length}건</div></div>
-      <div class="kpi"><div class="l">㎡당 중앙값 시세</div><div class="v">${won(Math.round(medPpm))}</div></div>
-      <div class="kpi"><div class="l">㎡당 평균 시세</div><div class="v">${won(Math.round(avgPpm))}</div></div>
+      <div class="kpi"><div class="l">㎡당 중앙값 시세</div><div class="v">${won(Math.round(medPpm))} <span class="small">(평당 ${won(Math.round(medPpy))})</span></div></div>
+      <div class="kpi"><div class="l">㎡당 평균 시세</div><div class="v">${won(Math.round(avgPpm))} <span class="small">(평당 ${won(Math.round(avgPpy))})</span></div></div>
       ${ratio?`<div class="kpi"><div class="l">공시지가 대비 실거래 배율</div><div class="v">${ratio.toFixed(2)}배</div></div>`:''}
     </div>`;
 
     if(estTotal){
       h += `<div class="card" style="background:#FAF9F6;margin-top:14px"><h3 style="margin-top:0">합리적 매도가 제안 (참고용)</h3>
         <p class="big" style="font-size:26px">${won(Math.round(lowTotal))} ~ ${won(Math.round(highTotal))}</p>
-        <p class="small">대지면적 ${num(area,1)}㎡ × 인근 실거래 ㎡당 중앙값(${won(Math.round(medPpm))}) 기준, ±10% 범위입니다. 지목·형상·도로접면·개별 특성에 따라 실제 가치는 달라질 수 있어 참고 자료로만 활용하시고, 최종 가격은 감정평가·중개업소 시세 확인을 권장합니다.</p>
+        <p class="small">대지면적 ${num(area,1)}㎡(${num(area/3.3058,1)}평) × 인근 실거래 시세 중앙값 — ㎡당 ${won(Math.round(medPpm))} (평당 ${won(Math.round(medPpy))}) 기준, ±10% 범위입니다. 지목·형상·도로접면·개별 특성에 따라 실제 가치는 달라질 수 있어 참고 자료로만 활용하시고, 최종 가격은 감정평가·중개업소 시세 확인을 권장합니다.</p>
       </div>`;
     }
 
     h += `<h3>최근 인근 거래 사례 (최대 20건)</h3>
-      <table><tr><th>계약일</th><th>읍면동</th><th>지목</th><th>용도지역</th><th class="num">면적(㎡)</th><th class="num">거래금액</th><th class="num">㎡당가</th></tr>
+      <table><tr><th>계약일</th><th>읍면동</th><th>지목</th><th>용도지역</th><th class="num">면적(㎡/평)</th><th class="num">거래금액</th><th class="num">㎡당가</th><th class="num">평당가</th></tr>
       ${pool.slice().sort((a,b)=>b._date.localeCompare(a._date)).slice(0,20).map(it=>
-        `<tr><td>${esc(it._date)}</td><td>${esc(it.umdNm)}</td><td>${esc(it.jimok)}</td><td>${esc(it.landUse)}</td><td class="num">${num(it._area,1)}</td><td class="num">${won(it._total)}</td><td class="num">${won(Math.round(it._ppm))}</td></tr>`
+        `<tr><td>${esc(it._date)}</td><td>${esc(it.umdNm)}</td><td>${esc(it.jimok)}</td><td>${esc(it.landUse)}</td><td class="num">${num(it._area,1)} / ${num(it._area/3.3058,1)}</td><td class="num">${won(it._total)}</td><td class="num">${won(Math.round(it._ppm))}</td><td class="num">${won(Math.round(it._ppm*3.3058))}</td></tr>`
       ).join('')}
       </table>`;
 
