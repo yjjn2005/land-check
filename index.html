@@ -47,6 +47,11 @@
   .apistatus .dot{font-size:11px;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.12)}
   .apistatus .ok{color:#8FE3A6}.apistatus .fail{color:#FF9B9B}
   .tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;border-bottom:2px solid var(--border);padding-bottom:0}
+  .maintabs{display:flex;gap:8px;margin-bottom:18px}
+  .maintabs .mtab{flex:1;padding:12px;background:#fff;border:2px solid var(--border);border-radius:8px;font-size:15px;font-weight:700;color:#888;cursor:pointer}
+  .maintabs .mtab.active{background:var(--navy);border-color:var(--navy);color:#fff}
+  .mainpanel{display:none}
+  .mainpanel.active{display:block}
   .tabs button{flex:0 0 auto;padding:10px 16px;background:none;border:none;border-bottom:3px solid transparent;font-size:14px;font-weight:600;color:#888;cursor:pointer;white-space:nowrap}
   .tabs button.active{color:var(--navy);border-bottom-color:var(--gold)}
   .tabpanel{display:none}
@@ -59,34 +64,61 @@
 <div class="wrap">
   <header><h1>토지·건축 조회</h1><span class="sub">토지이용계획 · 공시지가 · 건폐율/용적률 · 용도별 건축물 · 행위제한</span></header>
 
-  <div class="search">
-    <input id="q" type="text" placeholder="지번주소 또는 PNU 19자리" value="경기도 남양주시 화도읍 월산리 20-5">
-    <button id="go">조회</button>
+  <div class="maintabs">
+    <button class="mtab active" id="mtab-single" onclick="switchMainTab('single')">단일 조회</button>
+    <button class="mtab" id="mtab-multi" onclick="switchMainTab('multi')">일괄 조회</button>
   </div>
-  <div class="hint">예: 경기도 남양주시 화도읍 월산리 537 / 또는 PNU 4136025627100200005</div>
 
-  <div id="status" class="status hidden"></div>
-  <div id="out"></div>
-
-  <details class="card" style="margin-top:20px">
-    <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:15px">다중 필지 일괄 조회 (동일 소유자 보유 필지 매매 안내용)</summary>
-    <p class="small" style="margin-top:10px">한 줄에 한 필지씩(지번주소 또는 PNU) 입력하면, 필지별 상세와 전체 합산 결과를 함께 보여주고 전체 필지를 묶은 매매 브로셔를 만들 수 있습니다.</p>
-    <textarea id="multiQ" rows="5" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit" placeholder="경기도 남양주시 화도읍 월산리 20-5&#10;경기도 남양주시 화도읍 월산리 537&#10;...">경기도 남양주시 화도읍 월산리 20-5
-경기도 남양주시 화도읍 월산리 537</textarea>
-    <button id="multiGo" style="margin-top:10px;padding:10px 18px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">일괄 조회</button>
-    <div id="multiOut" style="margin-top:14px"></div>
-  </details>
-
-  <details class="card" style="margin-top:12px">
-    <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:15px">설정 — 기기 간 동기화 (PIN)</summary>
-    <p class="small" style="margin-top:10px">위 다중 필지 목록을 PIN 번호로 저장해두면, 다른 기기에서 같은 PIN을 입력해 동일한 목록을 불러올 수 있습니다. PIN은 원하는 숫자·영문 4자리 이상으로 직접 정하시면 됩니다 (예: 생일, 전화번호 뒷자리 등 기억하기 쉬운 것).</p>
-    <div class="row" style="margin-top:10px">
-      <input id="pinInput" type="text" placeholder="PIN 입력 (4자리 이상)" style="max-width:200px">
-      <button id="pinSave" style="padding:10px 16px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">저장</button>
-      <button id="pinLoad" style="padding:10px 16px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">불러오기</button>
+  <div id="panel-single" class="mainpanel active">
+    <div class="search">
+      <input id="q" type="text" placeholder="지번주소 또는 PNU 19자리" value="경기도 남양주시 화도읍 월산리 20-5">
+      <button id="go">조회</button>
     </div>
-    <div id="pinStatus" class="small" style="margin-top:8px"></div>
-  </details>
+    <div class="hint">예: 경기도 남양주시 화도읍 월산리 537 / 또는 PNU 4136025627100200005</div>
+
+    <div id="status" class="status hidden"></div>
+    <div id="out"></div>
+  </div>
+
+  <div id="panel-multi" class="mainpanel">
+    <details class="card" open>
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:15px">이용방법</summary>
+      <ol class="small" style="margin:10px 0 0;padding-left:20px;line-height:1.8">
+        <li>아래 입력창에 <b>한 줄에 필지 하나씩</b> 지번주소(또는 PNU 19자리)를 입력합니다. 동일 소유자가 보유한 여러 필지를 함께 조회할 때 사용합니다.</li>
+        <li><b>일괄 조회</b> 버튼을 누르면 필지별로 순서대로 조회하고, 표로 정리해서 보여줍니다. 총 필지 수·총 면적·총 공시지가 합계도 자동 계산됩니다.</li>
+        <li>목록의 <b>"보기"</b> 버튼을 누르면 [단일 조회] 탭으로 이동해 해당 필지의 상세 정보(토지이용계획·건축개요·매도가 산정 등)를 볼 수 있습니다.</li>
+        <li><b>"전체 총괄 브로셔"</b> 버튼으로 모든 필지를 한 문서에 담은 매매 안내 자료를 만들어 인쇄·PDF저장할 수 있습니다.</li>
+        <li>목록을 다른 기기에서도 쓰려면 아래 <b>설정</b>에서 PIN으로 저장 후, 다른 기기에서 같은 PIN으로 불러오면 됩니다.</li>
+      </ol>
+    </details>
+
+    <div class="card">
+      <h2 style="margin-top:0">다중 필지 목록</h2>
+      <p class="small">한 줄에 한 필지씩(지번주소 또는 PNU) 입력하면, 필지별 상세와 전체 합산 결과를 함께 보여주고 전체 필지를 묶은 매매 브로셔를 만들 수 있습니다.</p>
+      <textarea id="multiQ" rows="5" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit" placeholder="경기도 남양주시 화도읍 월산리 20-5&#10;경기도 남양주시 화도읍 월산리 537&#10;...">경기도 남양주시 화도읍 월산리 20-5
+경기도 남양주시 화도읍 월산리 537</textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="multiGo" style="padding:10px 18px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">일괄 조회</button>
+        <button id="multiClear" style="padding:10px 18px;background:#B3261E;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">목록·결과 지우기</button>
+      </div>
+      <div id="multiOut" style="margin-top:14px"></div>
+    </div>
+
+    <details class="card">
+      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:15px">설정 — 기기 간 동기화 (PIN)</summary>
+      <p class="small" style="margin-top:10px">위 다중 필지 목록을 PIN 번호로 저장해두면, 다른 기기에서 같은 PIN을 입력해 동일한 목록을 불러올 수 있습니다. PIN은 원하는 숫자·영문 4자리 이상으로 직접 정하시면 됩니다 (예: 생일, 전화번호 뒷자리 등 기억하기 쉬운 것).</p>
+      <div class="row" style="margin-top:10px">
+        <input id="pinInput" type="text" placeholder="PIN 입력 (4자리 이상)" style="max-width:200px">
+        <button id="pinSave" style="padding:10px 16px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">저장</button>
+        <button id="pinLoad" style="padding:10px 16px;background:var(--navy);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">불러오기</button>
+      </div>
+      <div id="pinStatus" class="small" style="margin-top:8px"></div>
+      <p class="small" style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+        <b>조회 후 삭제 방법</b> — "목록·결과 지우기"는 이 화면(브라우저)에서만 지워집니다. PIN으로 서버에 저장까지 했던 목록을 완전히 삭제하려면 아래 버튼을 누르세요.
+      </p>
+      <button id="pinDelete" style="padding:10px 16px;background:#B3261E;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">이 PIN의 서버 저장 데이터 삭제</button>
+    </details>
+  </div>
 
   <footer>
     ※ 토지이용계획·공시지가·토지대장·토지특성은 브이월드(국토교통부 국가공간정보) 오픈API, 행위제한은 국토교통부 토지이용규제정보서비스 기준. 건폐율·용적률 상한과 용도별 건축물은 「국토의 계획 및 이용에 관한 법률 시행령」 §71·§84·§85 요약.<br>
@@ -208,6 +240,30 @@ document.getElementById('pinLoad').addEventListener('click', async () => {
   }catch(e){ setPinStatus('불러오기 실패: ' + e.message, true); }
 });
 
+document.getElementById('pinDelete').addEventListener('click', async () => {
+  const pin = document.getElementById('pinInput').value.trim();
+  if(pin.length < 4){ setPinStatus('삭제할 PIN을 입력해주세요.', true); return; }
+  if(!confirm('PIN "' + pin + '"으로 서버에 저장된 목록을 완전히 삭제합니다. 계속할까요?')) return;
+  try{
+    const res = await fetch(PROXY + '/sync/' + encodeURIComponent(pin), { method: 'DELETE' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    if(localStorage.getItem('landcheck_pin') === pin) localStorage.removeItem('landcheck_pin');
+    setPinStatus('PIN "' + pin + '"의 서버 저장 데이터를 삭제했습니다.');
+  }catch(e){ setPinStatus('삭제 실패: ' + e.message, true); }
+});
+
+document.getElementById('multiClear').addEventListener('click', () => {
+  if(!confirm('입력한 필지 목록과 조회 결과를 이 화면에서 지웁니다. (PIN으로 저장한 서버 데이터는 남아있습니다) 계속할까요?')) return;
+  document.getElementById('multiQ').value = '';
+  document.getElementById('multiOut').innerHTML = '';
+  multiParcels = [];
+});
+
+function switchMainTab(name){
+  document.querySelectorAll('.mainpanel').forEach(p=>p.classList.toggle('active', p.id === 'panel-' + name));
+  document.querySelectorAll('.mtab').forEach(b=>b.classList.toggle('active', b.id === 'mtab-' + name));
+}
+
 async function loadParcelData(q){
   let pnu, addrLabel=q, point=null;
   if(/^\d{19}$/.test(q)){ pnu=q; }
@@ -284,7 +340,7 @@ function renderMulti(){
     const pr=(p.latestPrice&&p.area)?Number(p.latestPrice.pblntfPclnd)*p.area:null;
     h+=`<tr><td>${i+1}</td><td>${esc(p.addr)}</td><td>${p.zoneNames.map(z=>`<span class="badge">${esc(z)}</span>`).join('')||'-'}</td>
       <td class="num">${p.area?num(p.area,1)+' / '+num(p.area/3.3058,1):'-'}</td><td class="num">${pr?won(Math.round(pr)):'-'}</td>
-      <td><button onclick="render(multiParcels[${i}].d)" style="padding:4px 10px;font-size:12px;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer">보기</button></td></tr>`;
+      <td><button onclick="switchMainTab('single');render(multiParcels[${i}].d)" style="padding:4px 10px;font-size:12px;background:var(--navy);color:#fff;border:none;border-radius:4px;cursor:pointer">보기</button></td></tr>`;
   });
   h+=`</table>
     <button id="multiBrochureBtn" style="margin-top:14px;padding:12px 20px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:15px;cursor:pointer">전체 총괄 브로셔 보기 / 인쇄</button>`;
