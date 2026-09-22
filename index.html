@@ -40,6 +40,18 @@
   @media(max-width:520px){.grid2{grid-template-columns:1fr}}
   .kpi{background:#FAF9F6;border:1px solid var(--border);border-radius:6px;padding:10px 12px}
   .kpi .l{font-size:12px;color:var(--muted)}.kpi .v{font-size:18px;font-weight:700;color:var(--navy)}
+  .summary{background:linear-gradient(135deg,var(--navy),#1a3a63);color:#fff;border-radius:10px;padding:18px 20px;margin-bottom:16px}
+  .summary .addr{font-size:16px;font-weight:700;margin-bottom:6px}
+  .summary .chips span{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);padding:4px 10px;border-radius:12px;font-size:12px;margin:3px 6px 3px 0}
+  .apistatus{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .apistatus .dot{font-size:11px;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.12)}
+  .apistatus .ok{color:#8FE3A6}.apistatus .fail{color:#FF9B9B}
+  .tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;border-bottom:2px solid var(--border);padding-bottom:0}
+  .tabs button{flex:0 0 auto;padding:10px 16px;background:none;border:none;border-bottom:3px solid transparent;font-size:14px;font-weight:600;color:#888;cursor:pointer;white-space:nowrap}
+  .tabs button.active{color:var(--navy);border-bottom-color:var(--gold)}
+  .tabpanel{display:none}
+  .tabpanel.active{display:block}
+
   footer{font-size:12px;color:#888;margin-top:22px;line-height:1.6;border-top:1px solid var(--border);padding-top:10px}
 </style>
 </head>
@@ -289,11 +301,27 @@ function render(d){
   const others=d.uses.filter(u=>!String(u.prposAreaDstrcCode||'').startsWith('UQA'));
   const zoneNames=[...new Set(uqa.map(u=>u.prposAreaDstrcCodeNm).filter(n=>ZONE_RULES[n]))];
   const latestPrice=d.prices[0];
+  const addr=d.lad?.ldCodeNm? d.lad.ldCodeNm+' '+(d.lad.mnnmSlno||'') : d.addrLabel;
 
-  let h='';
-  // 기본 정보
-  h+=`<div class="card"><h2>기본 정보 (토지대장)</h2><table class="kv">
-    <tr><td>소재지</td><td>${esc(d.lad?.ldCodeNm? d.lad.ldCodeNm+' '+(d.lad.mnnmSlno||'') : d.addrLabel)}</td></tr>
+  // ---- 상단 요약 헤더 + API 상태 배지 ----
+  const apiLabels={lad:'토지대장',uses:'토지이용계획',prices:'공시지가',chars:'토지특성'};
+  const apiDots=Object.entries(apiLabels).map(([k,label])=>{
+    const st=d.raw[k]; const ok=st&&st.status==='fulfilled';
+    return `<span class="dot ${ok?'ok':'fail'}">${ok?'●':'○'} ${label} ${ok?'정상':'실패'}</span>`;
+  }).join('');
+  let sum=`<div class="summary">
+    <div class="addr">${esc(addr)}</div>
+    <div class="chips">
+      ${zoneNames.length?zoneNames.map(z=>`<span>${esc(z)}</span>`).join(''):'<span>용도지역 미확인</span>'}
+      ${area?`<span>${num(area,1)}㎡ (${num(area/3.3058,1)}평)</span>`:''}
+      ${latestPrice?`<span>공시지가 ${won(Number(latestPrice.pblntfPclnd))}/㎡</span>`:''}
+    </div>
+    <div class="apistatus">${apiDots}</div>
+  </div>`;
+
+  // ---- 탭1: 토지이용계획 ----
+  let t1=`<div class="card"><h2>기본 정보 (토지대장)</h2><table class="kv">
+    <tr><td>소재지</td><td>${esc(addr)}</td></tr>
     <tr><td>PNU</td><td>${esc(d.pnu)} <span class="small">(시군구코드 ${esc(areaCd)})</span></td></tr>
     <tr><td>지목</td><td>${esc(d.lad?.lndcgrCodeNm||d.char?.lndcgrCodeNm)}</td></tr>
     <tr><td>면적</td><td>${area?num(area,1)+' ㎡ ('+num(area/3.3058,1)+' 평)':'-'}</td></tr>
@@ -301,41 +329,21 @@ function render(d){
     ${d.point?`<tr><td>좌표</td><td class="small">${esc(d.point.x)}, ${esc(d.point.y)}</td></tr>`:''}
   </table></div>`;
 
-  // 공시지가
-  h+=`<div class="card"><h2>개별공시지가</h2>`;
-  if(latestPrice){
-    const ppm=Number(latestPrice.pblntfPclnd);
-    h+=`<div class="grid2">
-      <div class="kpi"><div class="l">${esc(latestPrice.stdrYear)}년 ${esc(latestPrice.stdrMt||'1')}월 기준 ㎡당</div><div class="v">${won(ppm)}</div></div>
-      <div class="kpi"><div class="l">평당 환산</div><div class="v">${won(Math.round(ppm*3.3058))}</div></div>
-      ${area?`<div class="kpi"><div class="l">필지 전체 공시지가 (면적 ${num(area,1)}㎡)</div><div class="v">${won(Math.round(ppm*area))}</div></div>`:''}
-    </div>`;
-    if(d.prices.length>1){
-      h+=`<h3>연도별 추이</h3><table><tr><th>기준연도</th><th class="num">㎡당(원)</th><th class="num">전년 대비</th></tr>`;
-      d.prices.slice(0,10).forEach((p,i)=>{const cur=Number(p.pblntfPclnd),prev=d.prices[i+1]?Number(d.prices[i+1].pblntfPclnd):null;const ch=prev?((cur-prev)/prev*100):null;
-        h+=`<tr><td>${esc(p.stdrYear)}</td><td class="num">${num(cur,0)}</td><td class="num">${ch==null?'-':(ch>=0?'+':'')+ch.toFixed(1)+'%'}</td></tr>`;});
-      h+=`</table>`;
-    }
-  } else h+=`<p class="small">공시지가 정보를 가져오지 못했습니다.</p>`;
-  h+=`</div>`;
-
-  // 토지이용계획 — 국토계획법
-  h+=`<div class="card"><h2>「국토의 계획 및 이용에 관한 법률」에 따른 지역·지구 등</h2>`;
-  h+= uqa.length? `<p>${uqa.map(u=>`<span class="badge">${esc(u.prposAreaDstrcCodeNm)}${u.cnflcAtNm&&u.cnflcAtNm!=='포함'?' ('+esc(u.cnflcAtNm)+')':''}</span>`).join('')}</p>`
+  t1+=`<div class="card"><h2>「국토의 계획 및 이용에 관한 법률」에 따른 지역·지구 등</h2>`;
+  t1+= uqa.length? `<p>${uqa.map(u=>`<span class="badge">${esc(u.prposAreaDstrcCodeNm)}${u.cnflcAtNm&&u.cnflcAtNm!=='포함'?' ('+esc(u.cnflcAtNm)+')':''}</span>`).join('')}</p>`
                  : `<p class="small">조회된 항목 없음</p>`;
-  h+=`</div>`;
-  // 다른 법령
-  h+=`<div class="card"><h2>다른 법령 등에 따른 지역·지구 등</h2>`;
-  if(others.length){
-    h+=`<table><tr><th>지역·지구</th><th>해당</th><th>코드</th><th>등록일</th></tr>`;
-    others.forEach(u=>{h+=`<tr><td>${esc(u.prposAreaDstrcCodeNm)}</td><td>${esc(u.cnflcAtNm)}</td><td class="small">${esc(u.prposAreaDstrcCode)}</td><td class="small">${esc(u.registDt)}</td></tr>`;});
-    h+=`</table>`;
-  } else h+=`<p class="small">해당 없음</p>`;
-  h+=`</div>`;
+  t1+=`</div>`;
 
-  // 토지특성
+  t1+=`<div class="card"><h2>다른 법령 등에 따른 지역·지구 등</h2>`;
+  if(others.length){
+    t1+=`<table><tr><th>지역·지구</th><th>해당</th><th>코드</th><th>등록일</th></tr>`;
+    others.forEach(u=>{t1+=`<tr><td>${esc(u.prposAreaDstrcCodeNm)}</td><td>${esc(u.cnflcAtNm)}</td><td class="small">${esc(u.prposAreaDstrcCode)}</td><td class="small">${esc(u.registDt)}</td></tr>`;});
+    t1+=`</table>`;
+  } else t1+=`<p class="small">해당 없음</p>`;
+  t1+=`</div>`;
+
   if(d.char){
-    h+=`<div class="card"><h2>토지특성 (${esc(d.char.stdrYear||'')}년 기준)</h2><table class="kv">
+    t1+=`<div class="card"><h2>토지특성 (${esc(d.char.stdrYear||'')}년 기준)</h2><table class="kv">
       <tr><td>용도지역</td><td>${esc(d.char.prposArea1Nm)}${d.char.prposArea2Nm?' / '+esc(d.char.prposArea2Nm):''}</td></tr>
       <tr><td>토지이용상황</td><td>${esc(d.char.ladUseSittnNm)}</td></tr>
       <tr><td>도로접면</td><td>${esc(d.char.roadSideCodeNm)}</td></tr>
@@ -343,56 +351,77 @@ function render(d){
     </table></div>`;
   }
 
-  // 건폐율·용적률 & 최대 규모
+  // ---- 탭2: 공시지가 ----
+  let t2='';
+  t2+=`<div class="card"><h2>개별공시지가</h2>`;
+  if(latestPrice){
+    const ppm=Number(latestPrice.pblntfPclnd);
+    t2+=`<div class="grid2">
+      <div class="kpi"><div class="l">${esc(latestPrice.stdrYear)}년 ${esc(latestPrice.stdrMt||'1')}월 기준 ㎡당</div><div class="v">${won(ppm)}</div></div>
+      <div class="kpi"><div class="l">평당 환산</div><div class="v">${won(Math.round(ppm*3.3058))}</div></div>
+      ${area?`<div class="kpi"><div class="l">필지 전체 공시지가 (면적 ${num(area,1)}㎡)</div><div class="v">${won(Math.round(ppm*area))}</div></div>`:''}
+    </div>`;
+    if(d.prices.length>1){
+      t2+=`<h3>연도별 추이</h3><table><tr><th>기준연도</th><th class="num">㎡당(원)</th><th class="num">전년 대비</th></tr>`;
+      d.prices.slice(0,10).forEach((p,i)=>{const cur=Number(p.pblntfPclnd),prev=d.prices[i+1]?Number(d.prices[i+1].pblntfPclnd):null;const ch=prev?((cur-prev)/prev*100):null;
+        t2+=`<tr><td>${esc(p.stdrYear)}</td><td class="num">${num(cur,0)}</td><td class="num">${ch==null?'-':(ch>=0?'+':'')+ch.toFixed(1)+'%'}</td></tr>`;});
+      t2+=`</table>`;
+    }
+  } else t2+=`<p class="small">공시지가 정보를 가져오지 못했습니다.</p>`;
+  t2+=`</div>`;
+
+  // ---- 탭3: 건축개요 ----
+  let t3='';
   zoneNames.forEach(z=>{
     const r=ZONE_RULES[z], b=ZONE_BUILDINGS[z];
-    h+=`<div class="card"><h2>${esc(z)} — 건폐율·용적률·행위제한(건축 가능 규모 및 건축물)</h2>
+    t3+=`<div class="card"><h2>${esc(z)} — 건폐율·용적률·행위제한</h2>
       <table><tr><th>구분</th><th>법정 상한</th><th>대지면적 적용 시 최대</th></tr>
       <tr><td>건폐율</td><td class="big">${r.bc}%</td><td>${area?'건축면적 '+num(area*r.bc/100,1)+' ㎡':'-'}</td></tr>
       <tr><td>용적률</td><td class="big">${esc(r.far)}%</td><td>${area?'연면적 '+num(area*Number(r.far.split('~')[0])/100,1)+' ~ '+num(area*Number(r.far.split('~')[1])/100,1)+' ㎡':'-'}</td></tr></table>
       <p class="small">시행령 §84·§85 상한. 실제 적용값은 남양주시 등 관할 도시계획조례로 확정(예: 조례 용적률이 150%이면 연면적 ${area?num(area*1.5,1):'-'}㎡).</p>`;
     if(b){
-      h+=`<h3>① 건축할 수 있는 건축물</h3><ul class="list">${b.allow.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>
+      t3+=`<h3>① 건축할 수 있는 건축물</h3><ul class="list">${b.allow.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>
           <h3>② 도시·군계획조례로 정하는 바에 따라 건축할 수 있는 건축물</h3><ul class="list">${b.cond.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>
           <h3>③ 건축할 수 없는 건축물(대표)</h3><ul class="list">${b.deny.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`;
     }
-    // 건축물 높이 — 법정 고정 숫자가 아니라 건축법 §61 일조권사선제한 원리 + 용적률 기준 개략 층수
     const farMax=r?Number(r.far.split('~')[1]):null;
-    const approxFloors = farMax? Math.max(1,Math.round(farMax/100*1.0)) : null; // 대략 전용률 고려 전 단순 참고치
-    h+=`<h3>④ 건축물의 높이</h3>
+    const approxFloors = farMax? Math.max(1,Math.round(farMax/100*1.0)) : null;
+    t3+=`<h3>④ 건축물의 높이</h3>
       <table class="kv">
         <tr><td>결정 방식</td><td>법령상 고정 층수·높이 제한은 없으며, 용적률 상한(${r?esc(r.far)+'%':'-'}) 범위 내에서 <b>건축법 §61 일조 등 확보를 위한 높이제한</b>(정북 방향 인접대지경계선으로부터의 거리에 따라 각 층 높이 제한)에 따라 실제 층수가 정해집니다.</td></tr>
         <tr><td>일조권 사선제한</td><td>전용주거지역·일반주거지역에서 적용. 높이 9m 이하 부분은 인접대지경계선에서 1.5m 이상, 9m 초과 부분은 해당 건축물 각 부분 높이의 1/2 이상을 띄워야 합니다(건축법 §61①, 남양주시 조례로 세부 기준 가감 가능).</td></tr>
         <tr><td>용적률 기준 참고 층수</td><td>${approxFloors?`용적률 상한(${esc(r.far)}%)만 놓고 단순 환산하면 약 <b>${approxFloors}~${Math.max(1,Math.round((farMax/100)))+1}층 내외</b> — 실제는 일조사선·건폐율·주차대수·구조에 따라 달라지므로 참고치일 뿐입니다.`:'해당 용도지역의 용적률 기준이 없어 산정 불가'}</td></tr>
-        <tr><td>기타 제한</td><td>공항고도제한·군사기지 고도제한·문화재보호구역 등에 해당하면 별도 높이 제한이 추가로 적용될 수 있습니다(위 "다른 법령 등에 따른 지역·지구" 표 확인).</td></tr>
-      </table>`;
-    h+=`</div>`;
+        <tr><td>기타 제한</td><td>공항고도제한·군사기지 고도제한·문화재보호구역 등에 해당하면 별도 높이 제한이 추가로 적용될 수 있습니다("토지이용계획" 탭의 다른 법령 지역·지구 표 확인).</td></tr>
+      </table></div>`;
   });
-
-  // 행위제한: 시행령 별표 기준 확정 리스트(위 ①②③)를 그대로 근거로 사용 — 별도 검색 없이 이미 위 카드에 전부 나열됨
-  const codes=d.uses.map(u=>u.prposAreaDstrcCode).filter(Boolean);
-
-  if(d.errs.length) h+=`<div class="card"><p class="small">일부 항목 조회 실패: ${esc(d.errs.join(' / '))}</p></div>`;
-
-  // 매스 다이어그램 (건축 가능 범위 개략도)
   if(zoneNames.length && area){
     const zz=zoneNames[0], rr=ZONE_RULES[zz];
-    h+=`<div class="card"><h2>건축 가능 매스 다이어그램 (개략도)</h2>${massDiagramSVG(area, rr.bc, rr.far)}
+    t3+=`<div class="card"><h2>건축 가능 매스 다이어그램 (개략도)</h2>${massDiagramSVG(area, rr.bc, rr.far)}
       <p class="small">대지를 정사각형으로 가정한 단순 개략도입니다. 실제 형상·도로 위치·일조사선에 따라 건축 가능 범위는 달라지므로 설계 전 건축사 확인이 필요합니다.</p></div>`;
   }
+  if(!zoneNames.length) t3+=`<div class="card"><p class="small">용도지역이 확인되지 않아 건축개요를 계산할 수 없습니다.</p></div>`;
 
-  // 매매 브로셔
-  h+=`<div class="card"><h2>부동산 매매 소개 브로셔</h2>
+  // ---- 탭4: 브로셔/원본 ----
+  let t4=`<div class="card"><h2>부동산 매매 소개 브로셔</h2>
     <p class="small">지금까지 조회된 정보를 매매용 브로셔 형태로 정리해서 인쇄·PDF저장할 수 있는 별도 화면으로 엽니다.</p>
     <button id="brochureBtn" style="padding:12px 20px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:15px;cursor:pointer">브로셔 보기 / 인쇄</button>
   </div>`;
+  if(d.errs.length) t4+=`<div class="card"><p class="small">일부 항목 조회 실패: ${esc(d.errs.join(' / '))}</p></div>`;
+  t4+=`<div class="card"><details><summary class="small" style="cursor:pointer">원본 응답 보기</summary><pre>${esc(JSON.stringify({lad:d.lad,uses:d.uses,prices:d.prices,char:d.char},null,2))}</pre></details></div>`;
 
-  h+=`<div class="card"><details><summary class="small" style="cursor:pointer">원본 응답 보기</summary><pre>${esc(JSON.stringify({lad:d.lad,uses:d.uses,prices:d.prices,char:d.char},null,2))}</pre></details></div>`;
-  out.innerHTML=h;
+  const tabs=[['t1','토지이용계획',t1],['t2','공시지가',t2],['t3','건축개요',t3],['t4','브로셔·원본',t4]];
+  let tabsHtml=`<div class="tabs">${tabs.map((t,i)=>`<button class="${i===0?'active':''}" onclick="switchTab('${t[0]}')" id="btn-${t[0]}">${esc(t[1])}</button>`).join('')}</div>`;
+  let panelsHtml=tabs.map((t,i)=>`<div class="tabpanel ${i===0?'active':''}" id="${t[0]}">${t[2]}</div>`).join('');
+
+  out.innerHTML = sum + tabsHtml + panelsHtml;
 
   const brochureBtn=document.getElementById('brochureBtn');
   if(brochureBtn) brochureBtn.addEventListener('click',()=>openBrochure({d,area,areaCd,zoneNames,latestPrice:d.prices[0]||null,others}));
+}
 
+function switchTab(id){
+  document.querySelectorAll('.tabpanel').forEach(p=>p.classList.toggle('active',p.id===id));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active',b.id==='btn-'+id));
 }
 </script>
 </body>
