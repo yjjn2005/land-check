@@ -271,15 +271,17 @@ async function loadParcelData(q){
     const items=await searchParcel(q); if(!items.length) throw new Error('해당 주소의 필지를 찾을 수 없습니다.');
     pnu=items[0].id; point=items[0].point; addrLabel=items[0].address?.parcel||q;
   }
-  const [ladR,useR,priceR,charR]=await Promise.allSettled([
-    ned("ladfrlList",{pnu}), ned("getLandUseAttr",{pnu}), ned("getIndvdLandPriceAttr",{pnu}), ned("getLandCharacteristics",{pnu})
+  const [ladR,useR,priceR,charR,bldR]=await Promise.allSettled([
+    ned("ladfrlList",{pnu}), ned("getLandUseAttr",{pnu}), ned("getIndvdLandPriceAttr",{pnu}), ned("getLandCharacteristics",{pnu}),
+    tryFetch(PROXY+"/molit/bld-title",{pnu})
   ]);
   const lad=(ladR.status==='fulfilled'?firstArray(ladR.value):null)||[];
   const uses=(useR.status==='fulfilled'?firstArray(useR.value):null)||[];
   const prices=((priceR.status==='fulfilled'?firstArray(priceR.value):null)||[]).slice().sort((a,b)=>String(b.stdrYear).localeCompare(String(a.stdrYear)));
   const chars=(charR.status==='fulfilled'?firstArray(charR.value):null)||[];
+  const buildings=(bldR.status==='fulfilled'?(bldR.value.items||[]):[]);
   const errs=[ladR,useR,priceR,charR].filter(r=>r.status==='rejected').map(r=>r.reason.message);
-  return {q,addrLabel,pnu,point,lad:lad[0]||null,uses,prices,char:chars.slice().sort((a,b)=>String(b.stdrYear||'').localeCompare(String(a.stdrYear||'')))[0]||null,errs,raw:{lad:ladR,uses:useR,prices:priceR,chars:charR}};
+  return {q,addrLabel,pnu,point,lad:lad[0]||null,uses,prices,char:chars.slice().sort((a,b)=>String(b.stdrYear||'').localeCompare(String(a.stdrYear||'')))[0]||null,buildings,errs,raw:{lad:ladR,uses:useR,prices:priceR,chars:charR,buildings:bldR}};
 }
 
 async function run(){
@@ -557,7 +559,7 @@ function render(d){
   const addr=d.lad?.ldCodeNm? d.lad.ldCodeNm+' '+(d.lad.mnnmSlno||'') : d.addrLabel;
 
   // ---- 상단 요약 헤더 + API 상태 배지 ----
-  const apiLabels={lad:'토지대장',uses:'토지이용계획',prices:'공시지가',chars:'토지특성'};
+  const apiLabels={lad:'토지대장',uses:'토지이용계획',prices:'공시지가',chars:'토지특성',buildings:'건축물대장'};
   const apiDots=Object.entries(apiLabels).map(([k,label])=>{
     const st=d.raw[k]; const ok=st&&st.status==='fulfilled';
     return `<span class="dot ${ok?'ok':'fail'}">${ok?'●':'○'} ${label} ${ok?'정상':'실패'}</span>`;
@@ -668,7 +670,35 @@ function render(d){
     <div id="compOut" style="margin-top:14px"></div>
   </div>`;
 
-  const tabs=[['t1','토지이용계획',t1],['t2','공시지가',t2],['t3','건축개요',t3],['t5','매도가 산정',t5],['t4','브로셔·원본',t4]];
+  // ---- 탭6: 건축물대장 (표제부) ----
+  let t6='';
+  if(d.buildings && d.buildings.length){
+    t6 += `<div class="card"><p class="small">이 필지에 등록된 건축물 ${d.buildings.length}동을 국토교통부 건축물대장(표제부) 기준으로 요약했습니다.</p></div>`;
+    d.buildings.forEach((b,i)=>{
+      const floors = `지상 ${b.grndFlrCnt||0}층${Number(b.ugrndFlrCnt)>0?' / 지하 '+b.ugrndFlrCnt+'층':''}`;
+      t6 += `<div class="card"><h2>${b.bldNm&&b.bldNm.trim()?esc(b.bldNm.trim()):'건축물 '+(i+1)}</h2>
+        <table class="kv">
+          <tr><td>대지위치</td><td>${esc(b.newPlatPlc&&b.newPlatPlc.trim()?b.newPlatPlc:b.platPlc)}</td></tr>
+          <tr><td>주용도</td><td>${esc(b.mainPurpsCdNm)}${b.etcPurps&&b.etcPurps.trim()?' ('+esc(b.etcPurps.trim())+')':''}</td></tr>
+          <tr><td>구조 / 지붕</td><td>${esc(b.strctCdNm)} / ${esc(b.roofCdNm)}</td></tr>
+          <tr><td>층수</td><td>${floors}${b.heit&&Number(b.heit)>0?' · 높이 '+num(b.heit,2)+'m':''}</td></tr>
+          <tr><td>대지면적 / 건축면적</td><td>${num(b.platArea,1)} ㎡ / ${num(b.archArea,1)} ㎡</td></tr>
+          <tr><td>연면적</td><td>${num(b.totArea,1)} ㎡ (전체 동 합계 ${num(b.totDongTotArea,1)} ㎡)</td></tr>
+          <tr><td>건폐율 / 용적률(대장 기재)</td><td>${num(b.bcRat,1)}% / ${num(b.vlRat,1)}%</td></tr>
+          <tr><td>세대수 / 가구수 / 호수</td><td>${esc(b.hhldCnt||0)} / ${esc(b.fmlyCnt||0)} / ${esc(b.hoCnt||0)}</td></tr>
+          <tr><td>사용승인일</td><td>${b.useAprDay?esc(b.useAprDay.slice(0,4)+'-'+b.useAprDay.slice(4,6)+'-'+b.useAprDay.slice(6,8)):'-'}</td></tr>
+          <tr><td>건축물대장 구분</td><td>${esc(b.regstrGbCdNm)} · ${esc(b.regstrKindCdNm)}</td></tr>
+          ${b.engrGrade&&b.engrGrade.trim()?`<tr><td>에너지효율등급</td><td>${esc(b.engrGrade.trim())}${b.engrRat&&Number(b.engrRat)>0?' (절감률 '+num(b.engrRat,1)+'%)':''}</td></tr>`:''}
+          ${b.rserthqkAblty&&b.rserthqkAblty.trim()?`<tr><td>내진능력</td><td>${esc(b.rserthqkAblty.trim())}</td></tr>`:''}
+        </table>
+      </div>`;
+    });
+    t6 += `<div class="card"><p class="small">본 요약은 표제부(건물 전체 개요) 기준이며, 전유부분·층별현황 등 상세 내역은 정부24 건축물대장 발급을 통해 확인하실 수 있습니다.</p></div>`;
+  } else {
+    t6 = `<div class="card"><p class="small">이 필지에는 국토교통부 건축물대장에 등록된 건축물이 조회되지 않았습니다 (나대지·주차장 등이거나, 미등록/무허가 건축물일 수 있습니다).</p></div>`;
+  }
+
+  const tabs=[['t1','토지이용계획',t1],['t2','공시지가',t2],['t3','건축개요',t3],['t6','건축물대장',t6],['t5','매도가 산정',t5],['t4','브로셔·원본',t4]];
   let tabsHtml=`<div class="tabs">${tabs.map((t,i)=>`<button class="${i===0?'active':''}" onclick="switchTab('${t[0]}')" id="btn-${t[0]}">${esc(t[1])}</button>`).join('')}</div>`;
   let panelsHtml=tabs.map((t,i)=>`<div class="tabpanel ${i===0?'active':''}" id="${t[0]}">${t[2]}</div>`).join('');
 
