@@ -409,7 +409,13 @@ function render(d){
   if(d.errs.length) t4+=`<div class="card"><p class="small">일부 항목 조회 실패: ${esc(d.errs.join(' / '))}</p></div>`;
   t4+=`<div class="card"><details><summary class="small" style="cursor:pointer">원본 응답 보기</summary><pre>${esc(JSON.stringify({lad:d.lad,uses:d.uses,prices:d.prices,char:d.char},null,2))}</pre></details></div>`;
 
-  const tabs=[['t1','토지이용계획',t1],['t2','공시지가',t2],['t3','건축개요',t3],['t4','브로셔·원본',t4]];
+  let t5=`<div class="card"><h2>인근 지역 토지 매매 사례 기반 매도가 산정</h2>
+    <p class="small">국토교통부 실거래가 공개시스템(토지 매매 신고자료)에서 최근 6개월간 같은 시군구·읍면동의 실제 거래 사례를 가져와 ㎡당 평균 시세를 산출합니다.</p>
+    <button id="compGo" style="padding:12px 20px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:15px;cursor:pointer">인근 매매사례 조회 · 매도가 산정</button>
+    <div id="compOut" style="margin-top:14px"></div>
+  </div>`;
+
+  const tabs=[['t1','토지이용계획',t1],['t2','공시지가',t2],['t3','건축개요',t3],['t5','매도가 산정',t5],['t4','브로셔·원본',t4]];
   let tabsHtml=`<div class="tabs">${tabs.map((t,i)=>`<button class="${i===0?'active':''}" onclick="switchTab('${t[0]}')" id="btn-${t[0]}">${esc(t[1])}</button>`).join('')}</div>`;
   let panelsHtml=tabs.map((t,i)=>`<div class="tabpanel ${i===0?'active':''}" id="${t[0]}">${t[2]}</div>`).join('');
 
@@ -417,6 +423,85 @@ function render(d){
 
   const brochureBtn=document.getElementById('brochureBtn');
   if(brochureBtn) brochureBtn.addEventListener('click',()=>openBrochure({d,area,areaCd,zoneNames,latestPrice:d.prices[0]||null,others}));
+
+  const compGo=document.getElementById('compGo');
+  if(compGo) compGo.addEventListener('click',()=>runComparableTrades({areaCd,addr,area,zoneNames,latestPrice:d.prices[0]||null}));
+}
+
+// ---------- 인근 매매사례 기반 매도가 산정 ----------
+function recentYearMonths(n){
+  const out=[]; const now=new Date();
+  for(let i=0;i<n;i++){ const dt=new Date(now.getFullYear(),now.getMonth()-i,1); out.push(String(dt.getFullYear())+String(dt.getMonth()+1).padStart(2,'0')); }
+  return out;
+}
+function median(arr){ const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2? s[m] : (s[m-1]+s[m])/2; }
+
+async function runComparableTrades({areaCd,addr,area,zoneNames,latestPrice}){
+  const out=document.getElementById('compOut'), btn=document.getElementById('compGo');
+  btn.disabled=true; out.innerHTML='<p class="small">최근 6개월 거래 데이터를 조회 중입니다...</p>';
+  const dongMatch = addr.match(/([가-힣]+(?:읍|면|동))/);
+  const dong = dongMatch? dongMatch[1] : null;
+
+  try{
+    const months=recentYearMonths(6);
+    const results=await Promise.allSettled(months.map(ym=>
+      tryFetch(PROXY+"/molit/land-trade",{areaCd,dealYmd:ym,numOfRows:"999"})
+    ));
+    let items=[];
+    results.forEach(r=>{ if(r.status==='fulfilled' && r.value.items) items=items.concat(r.value.items); });
+    items=items.filter(it=>Number(String(it.dealArea).replace(/,/g,''))>0 && it.dealAmount);
+    items.forEach(it=>{
+      const amt=Number(String(it.dealAmount).replace(/,/g,''))*10000; // 만원 -> 원
+      const ar=Number(String(it.dealArea).replace(/,/g,''));
+      it._ppm = amt/ar; it._total=amt; it._area=ar;
+      it._date = `${it.dealYear}-${String(it.dealMonth).padStart(2,'0')}-${String(it.dealDay).padStart(2,'0')}`;
+    });
+
+    let pool = dong? items.filter(it=>it.umdNm && it.umdNm.includes(dong)) : items;
+    let poolLabel = dong? `같은 읍면동(${dong})` : '같은 시군구 전체';
+    if(pool.length < 5){ pool = items; poolLabel = '같은 시군구 전체 (읍면동 표본 부족으로 확대)'; }
+
+    if(pool.length===0){
+      out.innerHTML = '<p class="small">최근 6개월간 조회된 거래 사례가 없습니다.</p>';
+      return;
+    }
+
+    const ppms = pool.map(it=>it._ppm).filter(v=>isFinite(v)&&v>0);
+    const avgPpm = ppms.reduce((a,b)=>a+b,0)/ppms.length;
+    const medPpm = median(ppms);
+    const estTotal = area? area*medPpm : null;
+    const lowTotal = estTotal? estTotal*0.9 : null;
+    const highTotal = estTotal? estTotal*1.1 : null;
+    const officialTotal = (latestPrice&&area)? Number(latestPrice.pblntfPclnd)*area : null;
+    const ratio = (officialTotal && estTotal)? (estTotal/officialTotal) : null;
+
+    let h = `<div class="grid2">
+      <div class="kpi"><div class="l">표본(${esc(poolLabel)}, 최근 6개월)</div><div class="v">${pool.length}건</div></div>
+      <div class="kpi"><div class="l">㎡당 중앙값 시세</div><div class="v">${won(Math.round(medPpm))}</div></div>
+      <div class="kpi"><div class="l">㎡당 평균 시세</div><div class="v">${won(Math.round(avgPpm))}</div></div>
+      ${ratio?`<div class="kpi"><div class="l">공시지가 대비 실거래 배율</div><div class="v">${ratio.toFixed(2)}배</div></div>`:''}
+    </div>`;
+
+    if(estTotal){
+      h += `<div class="card" style="background:#FAF9F6;margin-top:14px"><h3 style="margin-top:0">합리적 매도가 제안 (참고용)</h3>
+        <p class="big" style="font-size:26px">${won(Math.round(lowTotal))} ~ ${won(Math.round(highTotal))}</p>
+        <p class="small">대지면적 ${num(area,1)}㎡ × 인근 실거래 ㎡당 중앙값(${won(Math.round(medPpm))}) 기준, ±10% 범위입니다. 지목·형상·도로접면·개별 특성에 따라 실제 가치는 달라질 수 있어 참고 자료로만 활용하시고, 최종 가격은 감정평가·중개업소 시세 확인을 권장합니다.</p>
+      </div>`;
+    }
+
+    h += `<h3>최근 인근 거래 사례 (최대 20건)</h3>
+      <table><tr><th>계약일</th><th>읍면동</th><th>지목</th><th>용도지역</th><th class="num">면적(㎡)</th><th class="num">거래금액</th><th class="num">㎡당가</th></tr>
+      ${pool.slice().sort((a,b)=>b._date.localeCompare(a._date)).slice(0,20).map(it=>
+        `<tr><td>${esc(it._date)}</td><td>${esc(it.umdNm)}</td><td>${esc(it.jimok)}</td><td>${esc(it.landUse)}</td><td class="num">${num(it._area,1)}</td><td class="num">${won(it._total)}</td><td class="num">${won(Math.round(it._ppm))}</td></tr>`
+      ).join('')}
+      </table>`;
+
+    out.innerHTML = h;
+  }catch(e){
+    out.innerHTML = '<p class="small">조회 실패: '+esc(e.message)+'</p>';
+  }finally{
+    btn.disabled=false;
+  }
 }
 
 function switchTab(id){
