@@ -67,6 +67,7 @@
   <div class="maintabs">
     <button class="mtab active" id="mtab-single" onclick="switchMainTab('single')">단일 조회</button>
     <button class="mtab" id="mtab-multi" onclick="switchMainTab('multi')">일괄 조회</button>
+    <button class="mtab" id="mtab-settings" onclick="switchMainTab('settings')">설정</button>
   </div>
 
   <div id="panel-single" class="mainpanel active">
@@ -85,10 +86,11 @@
       <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:15px">이용방법</summary>
       <ol class="small" style="margin:10px 0 0;padding-left:20px;line-height:1.8">
         <li>아래 입력창에 <b>한 줄에 필지 하나씩</b> 지번주소(또는 PNU 19자리)를 입력합니다. 동일 소유자가 보유한 여러 필지를 함께 조회할 때 사용합니다.</li>
-        <li><b>일괄 조회</b> 버튼을 누르면 필지별로 순서대로 조회하고, 표로 정리해서 보여줍니다. 총 필지 수·총 면적·총 공시지가 합계도 자동 계산됩니다.</li>
+        <li><b>일괄 조회</b> 버튼을 누르면 필지들을 동시에 조회하고, 표로 정리해서 보여줍니다. 총 필지 수·총 면적·총 공시지가 합계도 자동 계산됩니다.</li>
         <li>목록의 <b>"보기"</b> 버튼을 누르면 [단일 조회] 탭으로 이동해 해당 필지의 상세 정보(토지이용계획·건축개요·매도가 산정 등)를 볼 수 있습니다.</li>
+        <li>각 줄의 <b>"삭제"</b> 버튼으로 필지 하나만 바로 목록에서 뺄 수 있습니다. 새 필지는 입력창에 줄을 추가하고 "일괄 조회"를 다시 누르면 됩니다.</li>
         <li><b>"전체 총괄 브로셔"</b> 버튼으로 모든 필지를 한 문서에 담은 매매 안내 자료를 만들어 인쇄·PDF저장할 수 있습니다.</li>
-        <li>목록을 다른 기기에서도 쓰려면 아래 <b>설정</b>에서 PIN으로 저장 후, 다른 기기에서 같은 PIN으로 불러오면 됩니다.</li>
+        <li>목록을 다른 기기에서도 쓰려면 [설정] 탭에서 PIN으로 저장 후, 다른 기기에서 같은 PIN으로 불러오면 됩니다.</li>
       </ol>
     </details>
 
@@ -103,10 +105,12 @@
       </div>
       <div id="multiOut" style="margin-top:14px"></div>
     </div>
+  </div>
 
-    <details class="card">
-      <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:15px">설정 — 기기 간 동기화 (PIN)</summary>
-      <p class="small" style="margin-top:10px">위 다중 필지 목록을 PIN 번호로 저장해두면, 다른 기기에서 같은 PIN을 입력해 동일한 목록을 불러올 수 있습니다. PIN은 원하는 숫자·영문 4자리 이상으로 직접 정하시면 됩니다 (예: 생일, 전화번호 뒷자리 등 기억하기 쉬운 것).</p>
+  <div id="panel-settings" class="mainpanel">
+    <div class="card">
+      <h2 style="margin-top:0">기기 간 동기화 (PIN)</h2>
+      <p class="small">[일괄 조회] 탭의 다중 필지 목록을 PIN 번호로 저장해두면, 다른 기기에서 같은 PIN을 입력해 동일한 목록을 불러올 수 있습니다. PIN은 원하는 숫자·영문 4자리 이상으로 직접 정하시면 됩니다 (예: 생일, 전화번호 뒷자리 등 기억하기 쉬운 것).</p>
       <div class="row" style="margin-top:10px">
         <input id="pinInput" type="text" placeholder="PIN 입력 (4자리 이상)" style="max-width:200px">
         <button id="pinSave" style="padding:10px 16px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">저장</button>
@@ -114,10 +118,10 @@
       </div>
       <div id="pinStatus" class="small" style="margin-top:8px"></div>
       <p class="small" style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
-        <b>조회 후 삭제 방법</b> — "목록·결과 지우기"는 이 화면(브라우저)에서만 지워집니다. PIN으로 서버에 저장까지 했던 목록을 완전히 삭제하려면 아래 버튼을 누르세요.
+        <b>조회 후 삭제 방법</b> — [일괄 조회] 탭의 "목록·결과 지우기"는 이 브라우저 화면에서만 지워집니다. PIN으로 서버에 저장까지 했던 목록을 완전히 삭제하려면 아래 버튼을 누르세요.
       </p>
       <button id="pinDelete" style="padding:10px 16px;background:#B3261E;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">이 PIN의 서버 저장 데이터 삭제</button>
-    </details>
+    </div>
   </div>
 
   <footer>
@@ -313,12 +317,20 @@ async function runMulti(){
   const queries=raw.split('\n').map(s=>s.trim()).filter(Boolean);
   if(!queries.length) return;
   const btn=document.getElementById('multiGo'), out2=document.getElementById('multiOut');
-  btn.disabled=true; out2.innerHTML='<p class="small">'+queries.length+'개 필지 순차 조회 중...</p>';
-  multiParcels=[];
-  for(const q of queries){
-    try{ const d=await loadParcelData(q); multiParcels.push({query:q, d, ...summarizeParcel(d)}); }
-    catch(e){ multiParcels.push({query:q, error:e.message}); }
-  }
+  btn.disabled=true;
+  let done=0;
+  out2.innerHTML='<p class="small">'+queries.length+'개 필지 동시 조회 중... (0/'+queries.length+')</p>';
+  const results = await Promise.allSettled(queries.map(async q=>{
+    try{
+      const d=await loadParcelData(q);
+      done++; out2.innerHTML='<p class="small">'+queries.length+'개 필지 동시 조회 중... ('+done+'/'+queries.length+')</p>';
+      return {query:q, d, ...summarizeParcel(d)};
+    }catch(e){
+      done++; out2.innerHTML='<p class="small">'+queries.length+'개 필지 동시 조회 중... ('+done+'/'+queries.length+')</p>';
+      return {query:q, error:e.message};
+    }
+  }));
+  multiParcels = results.map(r=>r.value);
   renderMulti();
   btn.disabled=false;
 }
