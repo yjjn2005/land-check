@@ -67,6 +67,19 @@ export default {
         const text=await r.text();
         return json(xmlToJson(text));
       }
+      if(p==="/molit/bld-title"){
+        const pnu=(q.get("pnu")||"").trim();
+        if(!/^\d{19}$/.test(pnu)) return json({error:"pnu는 19자리 숫자여야 합니다"},400);
+        const sigunguCd=pnu.slice(0,5), bjdongCd=pnu.slice(5,10), platGbCd=pnu.slice(10,11), bun=pnu.slice(11,15), ji=pnu.slice(15,19);
+        const u=new URL("https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo");
+        u.searchParams.set("serviceKey",MOLIT_KEY);
+        u.searchParams.set("sigunguCd",sigunguCd); u.searchParams.set("bjdongCd",bjdongCd);
+        u.searchParams.set("platGbCd",platGbCd); u.searchParams.set("bun",bun); u.searchParams.set("ji",ji);
+        u.searchParams.set("numOfRows",q.get("numOfRows")||"20");
+        const r=await fetch(u.toString(),{headers:{"User-Agent":UA}});
+        const text=await r.text();
+        return json(xmlToJson(text));
+      }
       const ned=p.match(/^\/vworld\/ned\/([A-Za-z]+)$/);
       if(ned){
         const op=ned[1]; if(!ALLOWED_NED.has(op)) return json({error:"op not allowed"},400);
