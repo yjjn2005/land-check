@@ -32,6 +32,17 @@ export default {
     try{
       if(p==="/molit/search-act") return json(await molit("DTsearchLunCd",{landUseNm:q.get("landUseNm")||"",pageNum:q.get("pageNum")||"1",numOfRows:q.get("numOfRows")||"30"}));
       if(p==="/molit/restriction") return json(await molit("DTarLandUseInfo",{areaCd:q.get("areaCd")||"",ucodeList:q.get("ucodeList")||"",landUseNm:q.get("landUseNm")||""}));
+
+      if(p==="/molit/land-trade"){
+        const areaCd=q.get("areaCd")||"", dealYmd=q.get("dealYmd")||"";
+        const url=new URL("https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade");
+        url.searchParams.set("serviceKey",MOLIT_KEY); url.searchParams.set("LAWD_CD",areaCd);
+        url.searchParams.set("DEAL_YMD",dealYmd); url.searchParams.set("numOfRows",q.get("numOfRows")||"300");
+        // https 호출 시 실제 UTF-8 평문 응답 (http는 gzip 그대로 내려와 깨짐)
+        const r=await fetch(url.toString(),{headers:{"User-Agent":UA}});
+        const text=await r.text();
+        return json(xmlToJson(text));
+      }
       const ned=p.match(/^\/vworld\/ned\/([A-Za-z]+)$/);
       if(ned){
         const op=ned[1]; if(!ALLOWED_NED.has(op)) return json({error:"op not allowed"},400);
@@ -48,7 +59,7 @@ export default {
         const r=await fetch(u.toString(),{headers:{"User-Agent":UA}});
         return new Response(await r.text(),{status:r.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
       }
-      return json({ok:true,routes:["/molit/search-act","/molit/restriction","/vworld/ned/{op}","/vworld/search"]});
+      return json({ok:true,routes:["/molit/search-act","/molit/restriction","/molit/land-trade","/vworld/ned/{op}","/vworld/search"]});
     }catch(e){ return json({error:String(e)},500); }
   }
 };
