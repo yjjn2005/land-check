@@ -346,6 +346,7 @@ function openBrochure(ctx){
   const b=ZONE_BUILDINGS[zone];
   const ppm=latestPrice?Number(latestPrice.pblntfPclnd):null;
   const totalPrice=ppm&&area?Math.round(ppm*area):null;
+  const comp = window.__lastCompResult || null; // 매도가 산정 탭에서 계산한 값이 있으면 함께 표시
   const roadInfo=d.char?.roadSideCodeNm||'-';
   const shapeInfo=d.char?.tpgrphFrmCodeNm||'-';
   const hgInfo=d.char?.tpgrphHgCodeNm||'-';
@@ -385,11 +386,13 @@ function openBrochure(ctx){
       <h1>${esc2(addr)}</h1>
       <div class="addr">${esc2(zone)} · 지목 ${esc2(jimok)} · ${area?area.toFixed(1)+'㎡ ('+(area/3.3058).toFixed(1)+'평)':'-'}</div>
       ${totalPrice?`<div class="price">${totalPrice.toLocaleString('ko-KR')}원 <span style="font-size:14px;font-weight:400;opacity:.85">(개별공시지가 기준, ${esc2(latestPrice.stdrYear)}년)</span></div>`:''}
+      ${comp?`<div style="margin-top:8px;font-size:15px;color:#C6A15B;font-weight:700">인근 실거래 기준 매도가 제안: ${Math.round(comp.lowTotal).toLocaleString('ko-KR')} ~ ${Math.round(comp.highTotal).toLocaleString('ko-KR')}원</div>`:''}
     </div>
 
     <div class="grid">
       <div class="kpi"><div class="l">필지 면적</div><div class="v">${area?area.toFixed(1)+' ㎡ / '+(area/3.3058).toFixed(1)+' 평':'-'}</div></div>
       <div class="kpi"><div class="l">공시지가(㎡당 / 평당)</div><div class="v">${ppm?ppm.toLocaleString('ko-KR')+'원 / '+Math.round(ppm*3.3058).toLocaleString('ko-KR')+'원':'-'}</div></div>
+      ${comp?`<div class="kpi"><div class="l">매도가 제안(㎡당 / 평당)</div><div class="v">${Math.round(comp.lowPpm).toLocaleString('ko-KR')}~${Math.round(comp.highPpm).toLocaleString('ko-KR')}원 / ${Math.round(comp.lowPpy).toLocaleString('ko-KR')}~${Math.round(comp.highPpy).toLocaleString('ko-KR')}원</div></div>`:''}
       <div class="kpi"><div class="l">용도지역</div><div class="v">${esc2(zone)}</div></div>
       <div class="kpi"><div class="l">건폐율 / 용적률</div><div class="v">${r?r.bc+'% / '+r.far+'%':'-'}</div></div>
       <div class="kpi"><div class="l">도로 접면</div><div class="v">${esc2(roadInfo)}</div></div>
@@ -422,6 +425,7 @@ function openBrochure(ctx){
 
     <div class="foot">
       ※ 본 브로셔는 브이월드(국토교통부 국가공간정보) 오픈API 및 국토의 계획 및 이용에 관한 법률 시행령 기준으로 자동 생성된 참고 자료이며, 법적 효력이 있는 자료가 아닙니다.<br>
+      ${comp?`※ 매도가 제안은 국토교통부 실거래가 공개시스템의 인근 매매사례(표본 ${comp.poolCount}건, ${esc2(comp.poolLabel)}) ㎡당 중앙값 시세(${Math.round(comp.medPpm).toLocaleString('ko-KR')}원/㎡) 기준 ±10% 참고치이며, 감정평가가 아닙니다.<br>`:''}
       ※ 정확한 거래 조건은 공식 「토지이용계획확인원」(정부24) 및 등기사항증명서, 현장 확인을 통해 최종 확인하시기 바랍니다.<br>
       생성일: ${new Date().toLocaleDateString('ko-KR')}
     </div>
@@ -433,6 +437,7 @@ function openBrochure(ctx){
 function esc2(s){ return String(s??'-').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 function render(d){
+  window.__lastCompResult = null; // 필지가 바뀌면 이전 필지의 매도가 산정 결과는 무효화
   const areaCd=d.pnu.slice(0,5);
   const area=Number(d.lad?.lndpclAr||d.char?.lndpclAr||0);
   const uqa=d.uses.filter(u=>String(u.prposAreaDstrcCode||'').startsWith('UQA'));
@@ -622,10 +627,18 @@ async function runComparableTrades({areaCd,addr,area,zoneNames,latestPrice}){
       ${ratio?`<div class="kpi"><div class="l">공시지가 대비 실거래 배율</div><div class="v">${ratio.toFixed(2)}배</div></div>`:''}
     </div>`;
 
+    let compResult=null;
     if(estTotal){
+      const lowPpm=medPpm*0.9, highPpm=medPpm*1.1, lowPpy=medPpy*0.9, highPpy=medPpy*1.1;
+      compResult={medPpm,medPpy,avgPpm,avgPpy,estTotal,lowTotal,highTotal,lowPpm,highPpm,lowPpy,highPpy,poolCount:pool.length,poolLabel};
+      window.__lastCompResult = compResult;
       h += `<div class="card" style="background:#FAF9F6;margin-top:14px"><h3 style="margin-top:0">합리적 매도가 제안 (참고용)</h3>
         <p class="big" style="font-size:26px">${won(Math.round(lowTotal))} ~ ${won(Math.round(highTotal))}</p>
-        <p class="small">대지면적 ${num(area,1)}㎡(${num(area/3.3058,1)}평) × 인근 실거래 시세 중앙값 — ㎡당 ${won(Math.round(medPpm))} (평당 ${won(Math.round(medPpy))}) 기준, ±10% 범위입니다. 지목·형상·도로접면·개별 특성에 따라 실제 가치는 달라질 수 있어 참고 자료로만 활용하시고, 최종 가격은 감정평가·중개업소 시세 확인을 권장합니다.</p>
+        <div class="grid2" style="margin-top:10px">
+          <div class="kpi"><div class="l">㎡당 제안가</div><div class="v">${won(Math.round(lowPpm))} ~ ${won(Math.round(highPpm))}</div></div>
+          <div class="kpi"><div class="l">평당 제안가</div><div class="v">${won(Math.round(lowPpy))} ~ ${won(Math.round(highPpy))}</div></div>
+        </div>
+        <p class="small" style="margin-top:10px">대지면적 ${num(area,1)}㎡(${num(area/3.3058,1)}평) × 인근 실거래 시세 중앙값 — ㎡당 ${won(Math.round(medPpm))} (평당 ${won(Math.round(medPpy))}) 기준, ±10% 범위입니다. 지목·형상·도로접면·개별 특성에 따라 실제 가치는 달라질 수 있어 참고 자료로만 활용하시고, 최종 가격은 감정평가·중개업소 시세 확인을 권장합니다.</p>
       </div>`;
     }
 
