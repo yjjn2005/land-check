@@ -25,7 +25,7 @@ const ALLOWED_NED = new Set(["getLandUseAttr","getIndvdLandPriceAttr","ladfrlLis
 
 export default {
   async fetch(req, env){
-    const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,PUT,OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
+    const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,PUT,DELETE,OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
     if(req.method==="OPTIONS") return new Response(null,{headers:cors});
     const url=new URL(req.url); const p=url.pathname; const q=url.searchParams;
     const json=(o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
@@ -45,6 +45,10 @@ export default {
         try{ JSON.parse(body); } catch { return new Response("bad json", { status: 400, headers: cors }); }
         await env.LAND_CHECK_SYNC.put(key, body, { expirationTtl: 60 * 60 * 24 * 365 });
         return new Response('{"ok":true}', { headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      if(req.method === "DELETE"){
+        await env.LAND_CHECK_SYNC.delete(key);
+        return new Response('{"ok":true,"deleted":true}', { headers: { ...cors, "Content-Type": "application/json" } });
       }
       return new Response("method not allowed", { status: 405, headers: cors });
     }
