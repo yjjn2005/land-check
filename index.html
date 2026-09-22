@@ -266,6 +266,7 @@ document.getElementById('multiClear').addEventListener('click', () => {
 function switchMainTab(name){
   document.querySelectorAll('.mainpanel').forEach(p=>p.classList.toggle('active', p.id === 'panel-' + name));
   document.querySelectorAll('.mtab').forEach(b=>b.classList.toggle('active', b.id === 'mtab-' + name));
+  window.scrollTo({top:0, behavior:'smooth'});
 }
 
 async function loadParcelData(q){
